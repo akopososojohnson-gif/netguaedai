@@ -1,135 +1,102 @@
-# Job Application Autofill Extension
 
-A browser extension that automatically fills job application forms on major ATS platforms (Greenhouse, Lever, Workday) using DOM heuristics.
+NetGuard AI
+Network Intrusion Detection System with AI/ML Analysis
+Features
+·	Real-time Packet Capture - Scapy-based capture with immediate timestamps
+·	AI Threat Detection - ML-powered analysis of network flows
+·	Web Dashboard - Live view, historical search, alerts
+·	Domain Resolution - Shows domain names for connections
+·	30-Day Retention - Automatic data rotation
+·	Offline Log Access - Access logs even when web UI is down
+Architecture
+Scapy Capture → Kafka → AI Processor → TimescaleDB → Django Web UI
+     ↓              ↓         ↓              ↓              ↓
+  systemd       systemd   systemd      systemd        systemd
 
-## Features
+Installation
+Prerequisites
+·	Ubuntu/Debian system
+·	Root access (sudo)
+·	Network interface for capture
+One-Command Install
+cd /path/to/netguard
+sudo ./install.sh
 
-- **Multi-Platform Support**: Works with Greenhouse, Lever, Workday, and generic job application forms
-- **DOM Heuristics**: No hard-coded selectors - uses labels, placeholders, aria-labels, and input types
-- **Manual Review**: Always requires user confirmation before filling forms
-- **Resume Upload**: Highlights resume upload fields with instructions
-- **Profile Management**: Create and manage multiple job application profiles
-- **Privacy First**: All data stored locally, no cloud services
+This will:
+1.	Install all dependencies (Python, PostgreSQL, TimescaleDB, Kafka)
+2.	Create database and user
+3.	Set up configuration files
+4.	Create systemd services
+Post-Install Setup
+sudo ./install-services.sh
 
-## Architecture
+This will:
+1.	Set up Django database
+2.	Create admin user (from install.sh credentials)
+3.	Start all services
+4.	Enable auto-start on boot
+Access
+·	Web Interface: http://localhost:8000
+·	Login: Credentials set during install.sh
+Service Management
+# View all services
+systemctl status netguard-*
 
-### Core Components
+# Restart capture
+sudo systemctl restart netguard-capture
 
-1. **Content Script** (`src/content.js`): Form detection and autofill logic
-2. **Background Service** (`src/background.js`): Profile management and message coordination
-3. **Platform Handlers** (`src/platforms.js`): Platform-specific form handling
-4. **Popup UI** (`src/popup.js`): User interface for profile management
+# View logs
+sudo journalctl -u netguard-capture -f
+tail -f /var/log/netguard/capture.log
 
-### Form Detection Strategy
+Offline Access (When Web UI is Down)
+View Raw Capture Logs
+tail -f /var/log/netguard/capture.log
 
-The extension uses a multi-layered approach to detect job application forms:
+Query Database Directly
+sudo -u postgres psql netguard -c "SELECT * FROM connections ORDER BY time DESC LIMIT 10;"
 
-1. **URL Pattern Analysis**: Identifies known ATS platforms
-2. **Form Content Analysis**: Searches for job-specific keywords
-3. **Field Pattern Matching**: Uses DOM heuristics to categorize fields
-4. **Confidence Scoring**: Ranks forms based on multiple signals
+View Kafka Topics
+/opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic netguard-capture --from-beginning
 
-### Field Detection Heuristics
+Configuration
+Edit /etc/netguard/netguard.conf:
+[capture]
+interface = eth0  # Change to your network interface
 
-Fields are detected using:
-- Input type attributes (`type="email"`, `type="tel"`)
-- Name attributes (`name="email"`, `name="first_name"`)
-- ID attributes (`id="email"`, `id="resume"`)
-- Placeholder text (`placeholder="Enter your email"`)
-- Associated label text
-- ARIA labels
+[retention]
+days = 30  # Data retention period
 
-## Installation
+[web]
+port = 8000  # Web interface port
 
-### Chrome
-1. Open Chrome and navigate to `chrome://extensions/`
-2. Enable "Developer mode"
-3. Click "Load unpacked"
-4. Select the extension directory
+After changes, restart services:
+sudo systemctl restart netguard-*
 
-### Firefox
-1. Open Firefox and navigate to `about:debugging`
-2. Click "This Firefox"
-3. Click "Load Temporary Add-on"
-4. Select the `manifest.json` file
+File Locations
+Component	Location
+Installation	/opt/netguard/
+Configuration	/etc/netguard/
+Logs	/var/log/netguard/
+Database	PostgreSQL with TimescaleDB
+Kafka Data	/var/lib/kafka/
 
-## Usage
+Troubleshooting
+Services won't start
+# Check logs
+sudo journalctl -xe
 
-1. **Create Profile**: Click the extension icon and create a new profile with your information
-2. **Navigate to Job Application**: Go to any job application page on supported platforms
-3. **Trigger Autofill**: Click the extension icon and select "Autofill Form"
-4. **Review and Confirm**: Review the filled fields and confirm submission
+# Check specific service
+sudo systemctl status netguard-capture
+sudo tail -f /var/log/netguard/capture.log
 
-## Development
+No data in web interface
+1.	Check capture is running: sudo systemctl status netguard-capture
+2.	Check Kafka topics: /opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092
+3.	Check database: sudo -u postgres psql netguard -c "SELECT COUNT(*) FROM connections;"
+Permission denied on capture
+Capture service runs as root (required for packet capture). Check:
+sudo systemctl cat netguard-capture
 
-### Build
-```bash
-npm install
-npm run build
-```
-
-### Development Mode
-```bash
-npm run dev
-```
-
-### Project Structure
-```
-job-autofill-extension/
-├── manifest.json           # Extension manifest
-├── popup.html             # Popup UI
-├── src/
-│   ├── content.js         # Content script
-│   ├── background.js      # Background service worker
-│   ├── popup.js           # Popup controller
-│   └── platforms.js       # Platform-specific handlers
-├── dist/                  # Built files
-└── webpack.config.js      # Build configuration
-```
-
-## Supported Platforms
-
-### Greenhouse
-- Multi-step application forms
-- Custom file upload handling
-- Dynamic content support
-
-### Lever
-- Drag-and-drop resume upload
-- Dynamic form sections
-- Custom styling handling
-
-### Workday
-- Iframe content handling
-- Complex navigation
-- Multi-step processes
-
-### Generic Forms
-- Standard form field detection
-- Fallback heuristics
-- Custom field mapping
-
-## Limitations
-
-- **Resume Upload**: Cannot directly upload files due to browser security restrictions
-- **Dynamic Content**: May require manual refresh on heavily dynamic pages
-- **Platform Changes**: May need updates if platforms significantly change their structure
-
-## Privacy & Security
-
-- All data stored locally in browser storage
-- No external API calls or data transmission
-- Optional profile encryption support
-- User-controlled data retention
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly on multiple platforms
-5. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details
+License
+MIT License
