@@ -1,0 +1,35 @@
+[Unit]
+Description=NetGuard AI - Web Interface
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=netguard
+Group=netguard
+WorkingDirectory=/opt/netguard/web
+Environment=PYTHONPATH=/opt/netguard/web
+Environment=DJANGO_SETTINGS_MODULE=netguard_web.settings
+Environment=CONFIG_PATH=/etc/netguard/netguard.conf
+
+ExecStart=/opt/netguard/venv/bin/gunicorn netguard_web.asgi:application -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 --workers 4
+ExecReload=/bin/kill -HUP $MAINPID
+
+Restart=always
+RestartSec=5
+StartLimitInterval=60s
+StartLimitBurst=3
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=true
+ProtectHome=true
+ReadWritePaths=/var/log/netguard /opt/netguard/web/staticfiles
+
+# Logging
+StandardOutput=append:/var/log/netguard/web.log
+StandardError=append:/var/log/netguard/web.log
+SyslogIdentifier=netguard-web
+
+[Install]
+WantedBy=multi-user.target

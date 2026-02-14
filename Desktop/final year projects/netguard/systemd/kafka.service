@@ -1,0 +1,28 @@
+[Unit]
+Description=Apache Kafka - Message Queue
+After=network.target zookeeper.service
+Requires=zookeeper.service
+
+[Service]
+Type=simple
+User=netguard
+Group=netguard
+WorkingDirectory=/opt/kafka
+Environment=JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+Environment=KAFKA_HEAP_OPTS="-Xmx512M -Xms256M"
+Environment=KAFKA_LOG4J_OPTS="-Dlog4j.configuration=file:/opt/kafka/config/log4j.properties"
+Environment=KAFKA_JMX_OPTS="-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false"
+
+ExecStart=/opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties
+ExecStop=/opt/kafka/bin/kafka-server-stop.sh
+
+Restart=on-failure
+RestartSec=10
+
+# Logging
+StandardOutput=append:/var/log/netguard/kafka.log
+StandardError=append:/var/log/netguard/kafka.log
+SyslogIdentifier=kafka
+
+[Install]
+WantedBy=multi-user.target

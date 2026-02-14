@@ -1,0 +1,324 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}Analytics - NetGuard AI{% endblock %}
+
+{% block content %}
+<!-- Top Stats Row -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Total Connections (24h)</div>
+        <div class="stat-value" id="stat-total-connections">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Threats Detected</div>
+        <div class="stat-value threat" id="stat-threats">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Avg Threat Score</div>
+        <div class="stat-value" id="stat-avg-score">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Total Traffic</div>
+        <div class="stat-value" id="stat-traffic">-</div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Threat Score Trend (Last Hour)</div>
+        </div>
+        <div id="trend-chart" style="height: 250px; display: flex; align-items: center; justify-content: center; color: #94a3b8;">
+            <canvas id="trendCanvas"></canvas>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Protocol Distribution</div>
+        </div>
+        <div id="protocol-chart" style="height: 250px; display: flex; align-items: center; justify-content: center; color: #94a3b8;">
+            Loading...
+        </div>
+    </div>
+</div>
+
+<!-- Attack Types & Top Threats -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Attack Types</div>
+        </div>
+        <div id="attack-types">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Count</th>
+                        <th>Percentage</th>
+                    </tr>
+                </thead>
+                <tbody id="attack-types-body">
+                    <tr><td colspan="3" style="text-align: center; color: #94a3b8;">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Top Threat Sources</div>
+        </div>
+        <div id="top-sources">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Source IP</th>
+                        <th>Threats</th>
+                        <th>Max Score</th>
+                    </tr>
+                </thead>
+                <tbody id="top-sources-body">
+                    <tr><td colspan="3" style="text-align: center; color: #94a3b8;">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Hourly Activity & Severity Distribution -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Hourly Activity</div>
+        </div>
+        <div id="hourly-chart" style="height: 200px; display: flex; align-items: center; justify-content: center; color: #94a3b8;">
+            Loading...
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Severity Distribution</div>
+        </div>
+        <div id="severity-chart" style="height: 200px; display: flex; align-items: center; justify-content: center; color: #94a3b8;">
+            Loading...
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Simple chart drawing function
+function drawLineChart(canvasId, data, labels) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width = canvas.offsetWidth;
+    const height = canvas.height = canvas.offsetHeight;
+    
+    // Clear
+    ctx.clearRect(0, 0, width, height);
+    
+    if (data.length === 0) {
+        ctx.fillStyle = '#94a3b8';
+        ctx.textAlign = 'center';
+        ctx.fillText('No data', width/2, height/2);
+        return;
+    }
+    
+    // Find min/max
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+    
+    // Draw line
+    ctx.strokeStyle = '#3b82f6';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    
+    data.forEach((val, i) => {
+        const x = (i / (data.length - 1)) * (width - 40) + 20;
+        const y = height - 30 - ((val - min) / range) * (height - 50);
+        
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+    
+    ctx.stroke();
+    
+    // Draw area under line
+    ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
+    ctx.lineTo(width - 20, height - 30);
+    ctx.lineTo(20, height - 30);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Draw labels
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    
+    labels.forEach((label, i) => {
+        if (i % Math.ceil(labels.length / 6) === 0) {
+            const x = (i / (labels.length - 1)) * (width - 40) + 20;
+            ctx.fillText(label, x, height - 10);
+        }
+    });
+}
+
+function drawBarChart(elementId, data) {
+    const container = document.getElementById(elementId);
+    if (!container || data.length === 0) {
+        if (container) container.innerHTML = '<div style="color: #94a3b8;">No data</div>';
+        return;
+    }
+    
+    const max = Math.max(...data.map(d => d.value));
+    
+    container.innerHTML = data.map(item => {
+        const pct = (item.value / max) * 100;
+        const color = item.color || '#3b82f6';
+        return `
+            <div style="display: flex; align-items: center; margin-bottom: 0.5rem;">
+                <div style="width: 80px; font-size: 0.75rem; color: #94a3b8;">${item.label}</div>
+                <div style="flex: 1; background: #334155; height: 20px; border-radius: 4px; overflow: hidden;">
+                    <div style="width: ${pct}%; background: ${color}; height: 100%; transition: width 0.3s;"></div>
+                </div>
+                <div style="width: 50px; text-align: right; font-size: 0.75rem; color: #e2e8f0;">${item.value}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+async function loadAnalytics() {
+    try {
+        // Get connections data
+        const response = await fetch('/api/connections/?minutes=60&limit=1000');
+        const data = await response.json();
+        
+        const connections = data.connections || [];
+        
+        // Basic stats
+        document.getElementById('stat-total-connections').textContent = connections.length.toLocaleString();
+        
+        const threats = connections.filter(c => c.threat_score > 0.5);
+        document.getElementById('stat-threats').textContent = threats.length.toLocaleString();
+        
+        const avgScore = connections.length > 0 
+            ? (connections.reduce((sum, c) => sum + (c.threat_score || 0), 0) / connections.length * 100).toFixed(1)
+            : 0;
+        document.getElementById('stat-avg-score').textContent = avgScore + '%';
+        
+        const totalBytes = connections.reduce((sum, c) => sum + (c.bytes_in || 0) + (c.bytes_out || 0), 0);
+        document.getElementById('stat-traffic').textContent = formatBytes(totalBytes);
+        
+        // Threat trend (last 12 points)
+        const trendData = connections.slice(-12).map(c => (c.threat_score || 0) * 100);
+        const trendLabels = connections.slice(-12).map((c, i) => i % 2 === 0 ? (i+1)+'m' : '');
+        drawLineChart('trendCanvas', trendData, trendLabels);
+        
+        // Protocol distribution
+        const protocols = {};
+        connections.forEach(c => {
+            protocols[c.protocol] = (protocols[c.protocol] || 0) + 1;
+        });
+        drawBarChart('protocol-chart', Object.entries(protocols).map(([k, v]) => ({ 
+            label: k, 
+            value: v,
+            color: k === 'TCP' ? '#3b82f6' : k === 'UDP' ? '#22c55e' : '#f59e0b'
+        })));
+        
+        // Attack types
+        const attackTypes = {};
+        threats.forEach(c => {
+            const type = c.threat_type || 'unknown';
+            attackTypes[type] = (attackTypes[type] || 0) + 1;
+        });
+        
+        const attackBody = document.getElementById('attack-types-body');
+        if (Object.keys(attackTypes).length === 0) {
+            attackBody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #94a3b8;">No attacks detected</td></tr>';
+        } else {
+            const total = threats.length;
+            attackBody.innerHTML = Object.entries(attackTypes)
+                .sort((a, b) => b[1] - a[1])
+                .map(([type, count]) => `
+                    <tr>
+                        <td>${type.toUpperCase()}</td>
+                        <td>${count}</td>
+                        <td>${((count/total)*100).toFixed(1)}%</td>
+                    </tr>
+                `).join('');
+        }
+        
+        // Top threat sources
+        const sources = {};
+        threats.forEach(c => {
+            if (!sources[c.src_ip]) {
+                sources[c.src_ip] = { count: 0, maxScore: 0 };
+            }
+            sources[c.src_ip].count++;
+            sources[c.src_ip].maxScore = Math.max(sources[c.src_ip].maxScore, c.threat_score || 0);
+        });
+        
+        const sourcesBody = document.getElementById('top-sources-body');
+        if (Object.keys(sources).length === 0) {
+            sourcesBody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #94a3b8;">No threat sources</td></tr>';
+        } else {
+            sourcesBody.innerHTML = Object.entries(sources)
+                .sort((a, b) => b[1].count - a[1].count)
+                .slice(0, 5)
+                .map(([ip, data]) => `
+                    <tr>
+                        <td>${ip}</td>
+                        <td>${data.count}</td>
+                        <td>${(data.maxScore * 100).toFixed(0)}%</td>
+                    </tr>
+                `).join('');
+        }
+        
+        // Hourly activity (group by hour)
+        const hourly = {};
+        connections.forEach(c => {
+            const hour = new Date(c.time).getHours();
+            hourly[hour] = (hourly[hour] || 0) + 1;
+        });
+        drawBarChart('hourly-chart', Object.entries(hourly).map(([h, v]) => ({ label: h + ':00', value: v })));
+        
+        // Severity distribution
+        const severity = {
+            'Critical (≥90%)': threats.filter(c => c.threat_score >= 0.9).length,
+            'High (70-89%)': threats.filter(c => c.threat_score >= 0.7 && c.threat_score < 0.9).length,
+            'Medium (50-69%)': threats.filter(c => c.threat_score >= 0.5 && c.threat_score < 0.7).length,
+            'Low (<50%)': connections.filter(c => c.threat_score < 0.5).length
+        };
+        drawBarChart('severity-chart', Object.entries(severity).map(([k, v]) => ({ 
+            label: k, 
+            value: v,
+            color: k.includes('Critical') ? '#ef4444' : k.includes('High') ? '#f97316' : k.includes('Medium') ? '#f59e0b' : '#22c55e'
+        })));
+        
+    } catch (error) {
+        console.error('Error loading analytics:', error);
+    }
+}
+
+// Load on page load
+document.addEventListener('DOMContentLoaded', loadAnalytics);
+
+// Auto refresh every 10 seconds
+setInterval(loadAnalytics, 10000);
+</script>
+{% endblock %}

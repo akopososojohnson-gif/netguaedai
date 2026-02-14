@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+media/
+staticfiles/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.pkl
+*.model
+*.h5
+*.joblib
+.env
+config.ini
+*.conf
+
+# Logs
+logs/
+*.log
+
+# Database
+*.sql
+*.sqlite
+
+# Model files (large binaries)
+models/
+*.pkl
+*.joblib
+*.h5
+*.pb
+*.onnx
+
+# Node modules (if any)
+node_modules/
+
+# Coverage
+htmlcov/
+.coverage
+.pytest_cache/
+
+# Misc
+.cache/
+*.bak
+*.tmp

@@ -1,0 +1,33 @@
+[Unit]
+Description=NetGuard AI - Packet Capture Service
+After=network.target kafka.service
+Wants=kafka.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/netguard
+Environment=PYTHONPATH=/opt/netguard
+Environment=CONFIG_PATH=/etc/netguard/netguard.conf
+
+ExecStart=/opt/netguard/venv/bin/python /opt/netguard/services/capture.py
+ExecReload=/bin/kill -HUP $MAINPID
+
+Restart=always
+RestartSec=5
+StartLimitInterval=60s
+StartLimitBurst=3
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=true
+
+# Logging
+StandardOutput=append:/var/log/netguard/capture.log
+StandardError=append:/var/log/netguard/capture.log
+SyslogIdentifier=netguard-capture
+
+[Install]
+WantedBy=multi-user.target

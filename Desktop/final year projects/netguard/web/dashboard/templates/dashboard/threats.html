@@ -1,0 +1,114 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}Threats - NetGuard AI{% endblock %}
+
+{% block content %}
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Critical Threats (24h)</div>
+        <div class="stat-value threat" id="critical-count">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">High Threats (24h)</div>
+        <div class="stat-value" style="color: #f97316;" id="high-count">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Total Attacks Blocked</div>
+        <div class="stat-value" id="blocked-count">-</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Top Attack Type</div>
+        <div class="stat-value" id="top-attack">-</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">🚨 Detected Threats (Last 24 Hours)</div>
+    </div>
+    
+    <table id="threats-table">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Source IP</th>
+                <th>Target</th>
+                <th>Attack Type</th>
+                <th>Threat Score</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="threats-body">
+            <tr>
+                <td colspan="6" style="text-align: center; color: #94a3b8; padding: 2rem;">Loading...</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function loadThreats() {
+    try {
+        const response = await fetch('/api/threats/');
+        const data = await response.json();
+        
+        // Update stats
+        const critical = data.threats.filter(t => t.threat_score >= 0.9).length;
+        const high = data.threats.filter(t => t.threat_score >= 0.7 && t.threat_score < 0.9).length;
+        
+        document.getElementById('critical-count').textContent = critical;
+        document.getElementById('high-count').textContent = high;
+        document.getElementById('blocked-count').textContent = data.threats.length;
+        
+        // Get top attack type (only if there are threats)
+        if (data.threats.length > 0) {
+            const types = {};
+            data.threats.forEach(t => {
+                types[t.threat_type] = (types[t.threat_type] || 0) + 1;
+            });
+            const topType = Object.entries(types).sort((a, b) => b[1] - a[1])[0];
+            document.getElementById('top-attack').textContent = topType ? topType[0].toUpperCase() : 'NONE';
+        } else {
+            document.getElementById('top-attack').textContent = 'NONE';
+        }
+        
+        // Update table
+        const tbody = document.getElementById('threats-body');
+        if (data.threats.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 2rem;">No threats detected in last 24 hours</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = data.threats.map(threat => {
+            const time = new Date(threat.time).toLocaleString();
+            const target = `${threat.dst_ip}:${threat.dst_port || '-'}`;
+            const score = (threat.threat_score * 100).toFixed(0) + '%';
+            const scoreColor = threat.threat_score >= 0.9 ? '#ef4444' : '#f97316';
+            
+            return `
+                <tr>
+                    <td>${time}</td>
+                    <td>${threat.src_ip}</td>
+                    <td>${target}</td>
+                    <td>${threat.threat_type ? threat.threat_type.toUpperCase() : 'UNKNOWN'}</td>
+                    <td style="color: ${scoreColor}; font-weight: bold;">${score}</td>
+                    <td><span class="badge badge-danger">DETECTED</span></td>
+                </tr>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Error loading threats:', error);
+        document.getElementById('threats-body').innerHTML = 
+            '<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 2rem;">Error loading data</td></tr>';
+    }
+}
+
+// Load on page load
+document.addEventListener('DOMContentLoaded', loadThreats);
+
+// Auto refresh every 5 seconds
+setInterval(loadThreats, 5000);
+</script>
+{% endblock %}

@@ -1,0 +1,163 @@
+{% extends 'dashboard/base.html' %}
+
+{% block title %}Alerts - NetGuard AI{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">🔔 Security Alerts</div>
+        <div>
+            <button class="btn btn-primary" onclick="acknowledgeAll()">Acknowledge All</button>
+        </div>
+    </div>
+    
+    <div style="margin-bottom: 1rem;">
+        <label style="color: #94a3b8; margin-right: 1rem;">Filter:</label>
+        <select id="severity-filter" onchange="loadAlerts()" style="background: #1e293b; color: #e2e8f0; border: 1px solid #334155; padding: 0.5rem; border-radius: 6px;">
+            <option value="all">All Severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+        </select>
+        <select id="status-filter" onchange="loadAlerts()" style="background: #1e293b; color: #e2e8f0; border: 1px solid #334155; padding: 0.5rem; border-radius: 6px; margin-left: 0.5rem;">
+            <option value="all">All Status</option>
+            <option value="unacknowledged">Unacknowledged</option>
+            <option value="acknowledged">Acknowledged</option>
+        </select>
+    </div>
+    
+    <table id="alerts-table">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Severity</th>
+                <th>Type</th>
+                <th>Message</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="alerts-body">
+            <tr>
+                <td colspan="7" style="text-align: center; color: #94a3b8; padding: 2rem;">Loading...</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function getSeverityBadge(severity) {
+    const colors = {
+        'critical': '#ef4444',
+        'high': '#f97316',
+        'medium': '#f59e0b',
+        'low': '#22c55e'
+    };
+    const color = colors[severity] || '#94a3b8';
+    return `<span class="badge" style="background: ${color}; text-transform: uppercase;">${severity}</span>`;
+}
+
+async function loadAlerts() {
+    try {
+        const response = await fetch('/api/alerts/recent/');
+        const data = await response.json();
+        
+        const severityFilter = document.getElementById('severity-filter').value;
+        const statusFilter = document.getElementById('status-filter').value;
+        
+        let alerts = data.alerts;
+        
+        // Apply filters
+        if (severityFilter !== 'all') {
+            alerts = alerts.filter(a => a.severity === severityFilter);
+        }
+        if (statusFilter === 'unacknowledged') {
+            alerts = alerts.filter(a => !a.acknowledged);
+        } else if (statusFilter === 'acknowledged') {
+            alerts = alerts.filter(a => a.acknowledged);
+        }
+        
+        const tbody = document.getElementById('alerts-body');
+        if (alerts.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 2rem;">No alerts found</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = alerts.map(alert => {
+            const time = new Date(alert.time).toLocaleString();
+            const status = alert.acknowledged 
+                ? '<span class="badge badge-normal">ACK</span>' 
+                : '<span class="badge badge-warning">NEW</span>';
+            const action = alert.acknowledged 
+                ? '-' 
+                : `<button class="btn btn-primary" style="padding: 0.25rem 0.5rem; font-size: 0.875rem;" onclick="acknowledgeAlert(${alert.id})">Acknowledge</button>`;
+            
+            return `
+                <tr>
+                    <td>${time}</td>
+                    <td>${getSeverityBadge(alert.severity)}</td>
+                    <td>${alert.alert_type}</td>
+                    <td>${alert.message}</td>
+                    <td>${alert.src_ip || '-'}</td>
+                    <td>${status}</td>
+                    <td>${action}</td>
+                </tr>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Error loading alerts:', error);
+        document.getElementById('alerts-body').innerHTML = 
+            '<tr><td colspan="7" style="text-align: center; color: #ef4444; padding: 2rem;">Error loading data</td></tr>';
+    }
+}
+
+async function acknowledgeAlert(alertId) {
+    try {
+        await fetch(`/api/alerts/${alertId}/acknowledge/`, { 
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+            }
+        });
+        loadAlerts();
+    } catch (error) {
+        console.error('Error acknowledging alert:', error);
+        alert('Failed to acknowledge alert');
+    }
+}
+
+async function acknowledgeAll() {
+    if (!confirm('Acknowledge all unacknowledged alerts?')) return;
+    
+    try {
+        const response = await fetch('/api/alerts/recent/');
+        const data = await response.json();
+        
+        const unacknowledged = data.alerts.filter(a => !a.acknowledged);
+        
+        for (const alert of unacknowledged) {
+            await fetch(`/api/alerts/${alert.id}/acknowledge/`, { 
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+                }
+            });
+        }
+        
+        loadAlerts();
+    } catch (error) {
+        console.error('Error acknowledging all:', error);
+    }
+}
+
+// Load on page load
+document.addEventListener('DOMContentLoaded', loadAlerts);
+
+// Auto refresh every 5 seconds
+setInterval(loadAlerts, 5000);
+</script>
+{% endblock %}

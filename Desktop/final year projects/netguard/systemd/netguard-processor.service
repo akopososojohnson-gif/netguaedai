@@ -1,0 +1,34 @@
+[Unit]
+Description=NetGuard AI - AI Processor Service
+After=network.target postgresql.service kafka.service
+Wants=postgresql.service kafka.service
+
+[Service]
+Type=simple
+User=netguard
+Group=netguard
+WorkingDirectory=/opt/netguard
+Environment=PYTHONPATH=/opt/netguard
+Environment=CONFIG_PATH=/etc/netguard/netguard.conf
+
+ExecStart=/opt/netguard/venv/bin/python /opt/netguard/services/processor.py
+ExecReload=/bin/kill -HUP $MAINPID
+
+Restart=always
+RestartSec=5
+StartLimitInterval=60s
+StartLimitBurst=3
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=true
+ProtectHome=true
+ReadWritePaths=/var/log/netguard
+
+# Logging
+StandardOutput=append:/var/log/netguard/processor.log
+StandardError=append:/var/log/netguard/processor.log
+SyslogIdentifier=netguard-processor
+
+[Install]
+WantedBy=multi-user.target
