@@ -81,3 +81,21 @@ htmlcov/
 .cache/
 *.bak
 *.tmp
+
+# Datasets and models (large files)
+cicsd dataset/
+datasets/
+*.parquet
+*.csv
+*.zip
+*.pkl
+*.model
+*.h5
+*.joblib
+
+# Training artifacts
+ai_training/data/
+ai_training/venv/
+
+# Docker volumes
+postgres_data/

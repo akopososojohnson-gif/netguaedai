@@ -68,7 +68,7 @@ def api_stats(request):
                 SELECT COUNT(*), 
                        COUNT(DISTINCT src_ip),
                        SUM(bytes_in + bytes_out),
-                       COUNT(CASE WHEN threat_score > 0.5 THEN 1 END)
+                       COUNT(CASE WHEN threat_score > 0.7 THEN 1 END)
                 FROM connections 
                 WHERE time > NOW() - INTERVAL '5 minutes'
             """)
@@ -161,7 +161,7 @@ def api_threats(request):
                 SELECT time, src_ip, dst_ip, dst_port, protocol,
                        threat_score, threat_type, domain
                 FROM connections 
-                WHERE threat_score > 0.5
+                WHERE threat_score > 0.7
                 AND time > NOW() - INTERVAL '24 hours'
                 ORDER BY time DESC
                 LIMIT 100

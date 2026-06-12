@@ -29,7 +29,6 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'channels',
     'dashboard',
 ]
 
@@ -76,15 +75,15 @@ DATABASES = {
     }
 }
 
-# Channel layer for WebSocket
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            'hosts': [('127.0.0.1', 6379)],
-        },
-    },
-}
+# Channel layer for WebSocket (disabled in Docker for simplicity)
+# CHANNEL_LAYERS = {
+#     'default': {
+#         'BACKEND': 'channels_redis.core.RedisChannelLayer',
+#         'CONFIG': {
+#             'hosts': [('127.0.0.1', 6379)],
+#         },
+#     },
+# }
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -131,22 +130,41 @@ LOGOUT_REDIRECT_URL = '/login/'
 SESSION_COOKIE_AGE = 3600  # 1 hour
 SESSION_SAVE_EVERY_REQUEST = True
 
-# Logging
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': '/var/log/netguard/web.log',
+# Logging - stdout in Docker, file on host
+if os.environ.get('DOCKER_ENV'):
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'handlers': {
+            'console': {
+                'level': 'INFO',
+                'class': 'logging.StreamHandler',
+            },
         },
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['file'],
-            'level': 'INFO',
-            'propagate': True,
+        'loggers': {
+            'django': {
+                'handlers': ['console'],
+                'level': 'INFO',
+                'propagate': True,
+            },
         },
-    },
-}
+    }
+else:
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'handlers': {
+            'file': {
+                'level': 'INFO',
+                'class': 'logging.FileHandler',
+                'filename': '/var/log/netguard/web.log',
+            },
+        },
+        'loggers': {
+            'django': {
+                'handlers': ['file'],
+                'level': 'INFO',
+                'propagate': True,
+            },
+        },
+    }

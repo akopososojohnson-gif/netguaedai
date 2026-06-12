@@ -1,0 +1,138 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: netguard-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: netguard
+      POSTGRES_USER: netguard
+      POSTGRES_PASSWORD: netguard
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netguard -d netguard"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - netguard_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: netguard-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - netguard_net
+
+  setup:
+    build: .
+    container_name: netguard-setup
+    environment:
+      SERVICE_NAME: setup
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: netguard
+      DB_USER: netguard
+      DB_PASS: netguard
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASS: ${ADMIN_PASS:-admin}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./ai_training/models:/opt/netguard/models:ro
+    networks:
+      - netguard_net
+
+  capture:
+    build: .
+    container_name: netguard-capture
+    restart: unless-stopped
+    environment:
+      SERVICE_NAME: capture
+      CAPTURE_INTERFACE: ${CAPTURE_INTERFACE:-eth0}
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    network_mode: host
+    depends_on:
+      - redis
+    volumes:
+      - ./docker/config/netguard.conf:/etc/netguard/netguard.conf:ro
+    profiles:
+      - capture
+
+  processor:
+    build: .
+    container_name: netguard-processor
+    restart: unless-stopped
+    environment:
+      SERVICE_NAME: processor
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: netguard
+      DB_USER: netguard
+      DB_PASS: netguard
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - setup
+      - postgres
+      - redis
+    volumes:
+      - ./ai_training/models:/opt/netguard/models:ro
+      - ./docker/config/netguard.conf:/etc/netguard/netguard.conf:ro
+    networks:
+      - netguard_net
+
+  web:
+    build: .
+    container_name: netguard-web
+    restart: unless-stopped
+    environment:
+      SERVICE_NAME: web
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: netguard
+      DB_USER: netguard
+      DB_PASS: netguard
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASS: ${ADMIN_PASS:-admin}
+    ports:
+      - "8765:8765"
+    depends_on:
+      - setup
+      - postgres
+      - redis
+    volumes:
+      - ./ai_training/models:/opt/netguard/models:ro
+      - ./docker/config/netguard.conf:/etc/netguard/netguard.conf:ro
+    networks:
+      - netguard_net
+
+volumes:
+  postgres_data:
+
+networks:
+  netguard_net:
+    driver: bridge

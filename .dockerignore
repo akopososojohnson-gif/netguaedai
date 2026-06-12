@@ -1,0 +1,23 @@
+.git
+.gitignore
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+node_modules/
+cicsd dataset/
+ai_training/data/
+ai_training/venv/
+*.parquet
+*.csv
+*.zip
+*.log
+logs/
+.DS_Store
+*.md
+start.sh

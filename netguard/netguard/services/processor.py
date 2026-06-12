@@ -19,19 +19,21 @@ from psycopg2.extras import execute_batch
 import redis
 import numpy as np
 
-# Setup logging
+# Setup logging - use stdout in Docker, file on host
+log_handlers = [logging.StreamHandler()]
+if not os.environ.get('DOCKER_ENV'):
+    os.makedirs('/var/log/netguard', exist_ok=True)
+    log_handlers.append(logging.FileHandler('/var/log/netguard/processor.log'))
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('/var/log/netguard/processor.log'),
-        logging.StreamHandler()
-    ]
+    handlers=log_handlers
 )
 logger = logging.getLogger('netguard-processor')
 
 # Model paths - use copied models in /opt/netguard/models
-MODEL_BASE_PATH = '/opt/netguard/models'
+MODEL_BASE_PATH = os.environ.get('MODEL_BASE_PATH', '/opt/netguard/models')
 
 class FlowTracker:
     """Track network flows and extract CICIDS2017-style features"""
@@ -203,6 +205,7 @@ class MLThreatDetector:
     
     def __init__(self):
         self.models = {}
+        self.scalers = {}
         self.feature_names = None
         self.load_models()
     
@@ -217,7 +220,19 @@ class MLThreatDetector:
         for name, path in model_files.items():
             try:
                 with open(path, 'rb') as f:
-                    self.models[name] = pickle.load(f)
+                    data = pickle.load(f)
+                    
+                # Handle new format (dict with model, scaler, feature_names)
+                if isinstance(data, dict):
+                    self.models[name] = data['model']
+                    self.scalers[name] = data.get('scaler', None)
+                    if data.get('feature_names'):
+                        self.feature_names = data['feature_names']
+                else:
+                    # Old format (just the model)
+                    self.models[name] = data
+                    self.scalers[name] = None
+                    
                 logger.info(f"Loaded {name} model from {path}")
             except Exception as e:
                 logger.warning(f"Could not load {name} model: {e}")
@@ -259,52 +274,84 @@ class MLThreatDetector:
         
         return np.array(features, dtype=np.float64).reshape(1, -1)
     
-    def predict(self, cicids_features):
-        """Run prediction using loaded models"""
+    def predict(self, cicids_features, flow_packets=0):
+        """Run prediction using loaded models with weighted ensemble"""
         if not self.models:
             # Fallback to rule-based
             return self._rule_based_predict(cicids_features)
         
         try:
-            # Ensemble prediction
-            predictions = []
+            # Don't flag flows with very few packets (not enough data)
+            if flow_packets < 3:
+                return 0.0, 'normal'
+            
+            # Whitelist common benign ports (reduce false positives)
+            dst_port = cicids_features.get(' Destination Port', 0)
+            whitelisted_ports = [53, 80, 443, 123, 67, 68]  # DNS, HTTP, HTTPS, NTP, DHCP
+            if dst_port in whitelisted_ports:
+                # Still check but require higher threshold
+                threshold_boost = 0.3
+            else:
+                threshold_boost = 0.0
+            
+            # Weighted ensemble prediction
+            weighted_scores = []
+            weights = []
             
             for name, model in self.models.items():
                 try:
                     # Extract features specific to this model's expected count
                     X = self.extract_features_array(cicids_features, model)
                     
+                    # Apply scaler if available
+                    scaler = self.scalers.get(name)
+                    if scaler:
+                        X = scaler.transform(X)
+                    
                     if name == 'isolation_forest':
                         # Isolation forest returns -1 for anomaly, 1 for normal
                         pred = model.predict(X)[0]
                         score = 0.9 if pred == -1 else 0.1
+                        weight = 0.2  # Lower weight for unsupervised model
                     elif name == 'xgboost':
-                        # XGBoost needs DMatrix
-                        try:
-                            import xgboost as xgb
-                            dmatrix = xgb.DMatrix(X)
-                            proba = model.predict(dmatrix)[0]
-                            score = float(proba)
-                        except:
-                            # Fallback to regular predict
-                            score = float(model.predict(X)[0])
-                    else:
-                        # Binary classifiers (Random Forest, etc.)
+                        # XGBoost - use predict_proba if available
                         if hasattr(model, 'predict_proba'):
                             proba = model.predict_proba(X)[0]
                             score = proba[1] if len(proba) > 1 else proba[0]
                         else:
                             score = float(model.predict(X)[0])
+                        weight = 0.5  # Higher weight for XGBoost (best accuracy)
+                    elif name == 'random_forest':
+                        # Random Forest
+                        if hasattr(model, 'predict_proba'):
+                            proba = model.predict_proba(X)[0]
+                            score = proba[1] if len(proba) > 1 else proba[0]
+                        else:
+                            score = float(model.predict(X)[0])
+                        weight = 0.3  # Medium weight
+                    else:
+                        # Other models
+                        if hasattr(model, 'predict_proba'):
+                            proba = model.predict_proba(X)[0]
+                            score = proba[1] if len(proba) > 1 else proba[0]
+                        else:
+                            score = float(model.predict(X)[0])
+                        weight = 0.2
                     
-                    predictions.append(score)
+                    weighted_scores.append(score * weight)
+                    weights.append(weight)
                 except Exception as e:
-                    logger.warning(f"{name} prediction failed: {e}")
+                    logger.debug(f"{name} prediction failed: {e}")
             
-            if predictions:
-                # Average ensemble
-                avg_score = np.mean(predictions)
-                threat_type = self._classify_threat(cicids_features, avg_score)
-                return avg_score, threat_type
+            if weighted_scores and weights:
+                # Calculate weighted average
+                avg_score = sum(weighted_scores) / sum(weights)
+                
+                # Apply threshold boost for whitelisted ports
+                effective_score = max(0, avg_score - threshold_boost)
+                
+                threat_type = self._classify_threat(cicids_features, effective_score)
+                return effective_score, threat_type
             else:
                 return self._rule_based_predict(cicids_features)
                 
@@ -331,20 +378,34 @@ class MLThreatDetector:
     
     def _classify_threat(self, features, score):
         """Classify threat type based on features and score"""
-        if score < 0.3:
+        # Higher threshold to reduce false positives
+        if score < 0.5:  # Was 0.3
             return 'normal'
+        elif score < 0.7:
+            return 'suspicious'
         
         # Determine type based on feature patterns
         dst_port = features.get(' Destination Port', 0)
         packets_per_sec = features.get(' Flow Packets/s', 0)
         bytes_per_sec = features.get('Flow Bytes/s', 0)
+        flow_duration = features.get(' Flow Duration', 0)
         
+        # High packet rate = DDoS
         if packets_per_sec > 10000:
             return 'ddos'
-        elif dst_port in [22, 23, 3389]:
+        
+        # Brute force on common attack ports
+        elif dst_port in [22, 23, 3389, 21, 25, 110]:
             return 'brute_force'
-        elif bytes_per_sec > 10000000:
+        
+        # High data transfer = possible exfiltration
+        elif bytes_per_sec > 10000000 and flow_duration > 1000000:
             return 'data_exfiltration'
+        
+        # Scan detection
+        elif packets_per_sec > 1000 and bytes_per_sec < 10000:
+            return 'port_scan'
+        
         else:
             return 'attack'
 
@@ -532,11 +593,14 @@ class AIProcessor:
         flow = self.flow_tracker.update_flow(packet)
         flow_key = self.flow_tracker.get_flow_key(packet)
         
+        # Get flow statistics
+        total_packets = flow['packets_fwd'] + flow['packets_bwd']
+        
         # Extract CICIDS2017 features
         cicids_features = self.flow_tracker.get_cicids_features(flow_key)
         
-        # ML prediction
-        threat_score, threat_type = self.ml_detector.predict(cicids_features)
+        # ML prediction (with flow packet count for thresholding)
+        threat_score, threat_type = self.ml_detector.predict(cicids_features, total_packets)
         
         # Enrich packet
         packet['threat_score'] = threat_score

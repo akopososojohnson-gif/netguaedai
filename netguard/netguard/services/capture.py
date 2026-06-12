@@ -16,14 +16,16 @@ from configparser import ConfigParser
 from scapy.all import sniff, IP, TCP, UDP, ICMP, DNS, DNSQR
 import redis
 
-# Setup logging
+# Setup logging - use stdout in Docker, file on host
+log_handlers = [logging.StreamHandler()]
+if not os.environ.get('DOCKER_ENV'):
+    os.makedirs('/var/log/netguard', exist_ok=True)
+    log_handlers.append(logging.FileHandler('/var/log/netguard/capture.log'))
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('/var/log/netguard/capture.log'),
-        logging.StreamHandler()
-    ]
+    handlers=log_handlers
 )
 logger = logging.getLogger('netguard-capture')
 

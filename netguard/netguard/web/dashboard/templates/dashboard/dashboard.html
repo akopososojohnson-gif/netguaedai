@@ -213,7 +213,7 @@ async function loadAnalytics() {
         // Basic stats
         document.getElementById('stat-total-connections').textContent = connections.length.toLocaleString();
         
-        const threats = connections.filter(c => c.threat_score > 0.5);
+        const threats = connections.filter(c => c.threat_score > 0.7);
         document.getElementById('stat-threats').textContent = threats.length.toLocaleString();
         
         const avgScore = connections.length > 0 
@@ -302,7 +302,7 @@ async function loadAnalytics() {
             'Critical (≥90%)': threats.filter(c => c.threat_score >= 0.9).length,
             'High (70-89%)': threats.filter(c => c.threat_score >= 0.7 && c.threat_score < 0.9).length,
             'Medium (50-69%)': threats.filter(c => c.threat_score >= 0.5 && c.threat_score < 0.7).length,
-            'Low (<50%)': connections.filter(c => c.threat_score < 0.5).length
+            'Low (<50%)': connections.filter(c => c.threat_score < 0.7).length
         };
         drawBarChart('severity-chart', Object.entries(severity).map(([k, v]) => ({ 
             label: k, 
