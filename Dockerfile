@@ -27,11 +27,11 @@ WORKDIR /opt/netguard
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Copy application code
-COPY netguaedai/netguard/netguard/services/ ./services/
-COPY netguaedai/netguard/netguard/web/ ./web/
+COPY netguard/netguard/services/ ./services/
+COPY netguard/netguard/web/ ./web/
 COPY docker/config/netguard.conf /etc/netguard/netguard.conf
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

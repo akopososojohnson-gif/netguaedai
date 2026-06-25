@@ -93,22 +93,31 @@ sudo ./start.sh
 
 Then open: **http://localhost:8765**
 
-### Option 2: Manual Start/Stop
+### Option 2: Fresh Install on Another System
 
 ```bash
-cd "final year project/netguaedai/netguard/netguard"
+cd "final year project"
+sudo ./install.sh
+```
 
+### Option 3: Portable Install from Flash Drive
+
+```bash
+cd /media/user/YOUR-FLASH-DRIVE/final-year-project
+sudo ./portable-install.sh
+```
+
+### Option 4: Manual Start/Stop
+
+```bash
 # Start all services
-sudo ./netguard.sh start
+sudo systemctl start netguard-capture netguard-processor netguard-web
 
 # Check status
-sudo ./netguard.sh status
-
-# View logs
-sudo ./netguard.sh logs
+sudo systemctl status netguard-capture netguard-processor netguard-web
 
 # Stop all services
-sudo ./netguard.sh stop
+sudo systemctl stop netguard-capture netguard-processor netguard-web
 ```
 
 ---
@@ -345,6 +354,32 @@ sudo systemctl restart netguard-processor
 ```
 
 ---
+
+## 🔁 GitHub Actions CI
+
+This repository includes a GitHub Actions workflow (`.github/workflows/ci.yml`) that automatically:
+
+- ✅ Runs Python syntax checks
+- ✅ Lints the code with `flake8`
+- ✅ Tests imports of all core dependencies
+- ✅ Tests Redis and PostgreSQL connectivity
+- ✅ Builds the Docker image
+
+The workflow runs on every push and pull request to `main`, `master`, or `develop`.
+
+## 💾 Flash Drive Distribution
+
+To install NetGuard AI on an offline/air-gapped system:
+
+1. Copy this entire project folder to a USB flash drive
+2. On the target system, mount the flash drive
+3. Run:
+   ```bash
+   cd /path/to/flash-drive/final-year-project
+   sudo ./portable-install.sh
+   ```
+
+**Note**: The target system still needs internet access during installation to download Debian/Ubuntu packages. For fully offline installation, pre-install Python dependencies using the system package manager.
 
 ## 📜 License
 

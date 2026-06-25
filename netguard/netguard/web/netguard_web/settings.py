@@ -1,7 +1,3 @@
-"""
-NetGuard AI - Django Settings
-"""
-
 import os
 from pathlib import Path
 import configparser
