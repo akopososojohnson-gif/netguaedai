@@ -99,3 +99,6 @@ ai_training/venv/
 
 # Docker volumes
 postgres_data/
+
+# Allow Docker config
+!docker/config/netguard.conf
