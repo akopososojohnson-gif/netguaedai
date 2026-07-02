@@ -60,7 +60,7 @@
                     </tr>
                 </thead>
                 <tbody id="attack-types-body">
-                    <tr><td colspan="3" style="text-align: center; color: #94a3b8;">Loading...</td></tr>
+                    <tr><td colspan="4" style="text-align: center; color: #94a3b8;">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -75,12 +75,13 @@
                 <thead>
                     <tr>
                         <th>Source IP</th>
+                        <th>Location</th>
                         <th>Threats</th>
-                        <th>Max Score</th>
+                        <th>Max Level</th>
                     </tr>
                 </thead>
                 <tbody id="top-sources-body">
-                    <tr><td colspan="3" style="text-align: center; color: #94a3b8;">Loading...</td></tr>
+                    <tr><td colspan="4" style="text-align: center; color: #94a3b8;">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -263,19 +264,34 @@ async function loadAnalytics() {
                 `).join('');
         }
         
+        const levelColors = {
+            'CRITICAL': '#ef4444',
+            'HIGH': '#f97316',
+            'MEDIUM': '#f59e0b',
+            'LOW': '#22c55e'
+        };
+        
         // Top threat sources
         const sources = {};
         threats.forEach(c => {
             if (!sources[c.src_ip]) {
-                sources[c.src_ip] = { count: 0, maxScore: 0 };
+                sources[c.src_ip] = { count: 0, maxScore: 0, maxLevel: 'LOW', country: c.src_country || 'Unknown' };
             }
             sources[c.src_ip].count++;
             sources[c.src_ip].maxScore = Math.max(sources[c.src_ip].maxScore, c.threat_score || 0);
+            const level = c.threat_level || 'LOW';
+            if (levelPriority(level) > levelPriority(sources[c.src_ip].maxLevel)) {
+                sources[c.src_ip].maxLevel = level;
+            }
         });
+        
+        function levelPriority(level) {
+            return { 'CRITICAL': 4, 'HIGH': 3, 'MEDIUM': 2, 'LOW': 1 }[level] || 0;
+        }
         
         const sourcesBody = document.getElementById('top-sources-body');
         if (Object.keys(sources).length === 0) {
-            sourcesBody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #94a3b8;">No threat sources</td></tr>';
+            sourcesBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #94a3b8;">No threat sources</td></tr>';
         } else {
             sourcesBody.innerHTML = Object.entries(sources)
                 .sort((a, b) => b[1].count - a[1].count)
@@ -283,8 +299,9 @@ async function loadAnalytics() {
                 .map(([ip, data]) => `
                     <tr>
                         <td>${ip}</td>
+                        <td>${data.country || 'Unknown'}</td>
                         <td>${data.count}</td>
-                        <td>${(data.maxScore * 100).toFixed(0)}%</td>
+                        <td><span class="badge" style="background: ${levelColors[data.maxLevel] || '#94a3b8'}; text-transform: uppercase;">${data.maxLevel}</span></td>
                     </tr>
                 `).join('');
         }
@@ -297,17 +314,17 @@ async function loadAnalytics() {
         });
         drawBarChart('hourly-chart', Object.entries(hourly).map(([h, v]) => ({ label: h + ':00', value: v })));
         
-        // Severity distribution
-        const severity = {
-            'Critical (≥90%)': threats.filter(c => c.threat_score >= 0.9).length,
-            'High (70-89%)': threats.filter(c => c.threat_score >= 0.7 && c.threat_score < 0.9).length,
-            'Medium (50-69%)': threats.filter(c => c.threat_score >= 0.5 && c.threat_score < 0.7).length,
-            'Low (<50%)': connections.filter(c => c.threat_score < 0.7).length
+        // Threat level distribution
+        const levelCounts = {
+            'CRITICAL': threats.filter(c => c.threat_level === 'CRITICAL').length,
+            'HIGH': threats.filter(c => c.threat_level === 'HIGH').length,
+            'MEDIUM': threats.filter(c => c.threat_level === 'MEDIUM').length,
+            'LOW': connections.filter(c => !c.threat_level || c.threat_level === 'LOW').length
         };
-        drawBarChart('severity-chart', Object.entries(severity).map(([k, v]) => ({ 
+        drawBarChart('severity-chart', Object.entries(levelCounts).map(([k, v]) => ({ 
             label: k, 
             value: v,
-            color: k.includes('Critical') ? '#ef4444' : k.includes('High') ? '#f97316' : k.includes('Medium') ? '#f59e0b' : '#22c55e'
+            color: levelColors[k] || '#94a3b8'
         })));
         
     } catch (error) {

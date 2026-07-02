@@ -17,6 +17,8 @@ NetGuard AI is a production-ready network intrusion detection system that captur
 - 🔴 **Real-Time Packet Capture** — Scapy-based capture with immediate timestamps
 - 🤖 **AI Threat Detection** — Ensemble ML with XGBoost, Random Forest, and Isolation Forest
 - 📊 **Live Web Dashboard** — Real-time view, historical search, alerts, and analytics
+- 🌐 **GeoIP Enrichment** — Source/destination country and city lookup (MaxMind GeoLite2 + online fallback)
+- 🎚️ **Threat Level Classification** — Explicit LOW / MEDIUM / HIGH / CRITICAL levels alongside threat score
 - 🌐 **Domain Resolution** — Shows domain names for DNS/HTTP/HTTPS connections
 - 🔔 **Alert Notifications** — Desktop notifications for critical/high threats
 - 📅 **30-Day Retention** — Automatic data rotation in PostgreSQL
@@ -243,14 +245,24 @@ RandomForestClassifier(
 - XGBoost: `scale_pos_weight=5.86`
 - Random Forest: `class_weight='balanced'`
 
-### Threat Thresholds
+### Threat Levels
 
-| Score | Classification |
-|-------|---------------|
-| `< 0.5` | Normal |
-| `0.5 – 0.7` | Suspicious |
-| `≥ 0.7` | Threat (alert generated) |
-| `≥ 0.9` | Critical |
+Every flow receives both a numeric **threat score** and an explicit **threat level**:
+
+| Threat Score | Threat Level | Description |
+|--------------|--------------|-------------|
+| `< 0.3` | **LOW** | Normal traffic |
+| `0.3 – 0.5` | **MEDIUM** | Suspicious patterns |
+| `0.5 – 0.7` | **HIGH** | Likely malicious (alert generated) |
+| `≥ 0.7` | **CRITICAL** | Confirmed threat (alert generated) |
+
+### GeoIP Enrichment
+
+The processor enriches each connection with GeoIP data:
+- **Source country/city** (`src_country`, `src_city`)
+- **Destination country** (`dst_country`)
+
+Offline lookups use MaxMind GeoLite2-City (place `GeoLite2-City.mmdb` at `/opt/netguard/GeoLite2-City.mmdb` or set `GEOIP_DB_PATH`). If the database is missing, the system falls back to a free online API for public IPs; private IPs are marked **Local**.
 
 ---
 

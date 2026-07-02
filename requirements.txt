@@ -12,3 +12,4 @@ pyarrow==19.0.1
 pandas==2.2.3
 channels==4.2.0
 uvicorn==0.34.0
+geoip2==4.8.0

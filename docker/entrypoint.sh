@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+# If arguments are passed (e.g., "python --version"), execute them directly
+if [ $# -gt 0 ]; then
+    exec "$@"
+fi
+
 # Default values
 SERVICE_NAME=${SERVICE_NAME:-web}
 CAPTURE_INTERFACE=${CAPTURE_INTERFACE:-eth0}

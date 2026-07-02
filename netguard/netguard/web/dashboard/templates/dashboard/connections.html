@@ -22,17 +22,19 @@
             <tr>
                 <th>Time</th>
                 <th>Source</th>
+                <th>Src Location</th>
                 <th>Destination</th>
+                <th>Dst Location</th>
                 <th>Domain</th>
                 <th>Protocol</th>
                 <th>Bytes</th>
                 <th>Duration</th>
-                <th>Threat</th>
+                <th>Threat Level</th>
             </tr>
         </thead>
         <tbody id="connections-body">
             <tr>
-                <td colspan="8" style="text-align: center; color: #94a3b8; padding: 2rem;">Loading...</td>
+                <td colspan="10" style="text-align: center; color: #94a3b8; padding: 2rem;">Loading...</td>
             </tr>
         </tbody>
     </table>
@@ -55,10 +57,22 @@ function formatDuration(seconds) {
     return seconds.toFixed(2) + 's';
 }
 
-function getThreatBadge(score, type) {
-    if (score < 0.3) return '<span class="badge badge-normal">NORMAL</span>';
-    if (score < 0.7) return '<span class="badge badge-warning">' + type.toUpperCase() + '</span>';
-    return '<span class="badge badge-danger">' + type.toUpperCase() + '</span>';
+function getThreatBadge(level, type) {
+    const colors = {
+        'CRITICAL': '#ef4444',
+        'HIGH': '#f97316',
+        'MEDIUM': '#f59e0b',
+        'LOW': '#22c55e'
+    };
+    const color = colors[level] || '#94a3b8';
+    const label = level || 'LOW';
+    return `<span class="badge" style="background: ${color}; text-transform: uppercase;">${label}</span>`;
+}
+
+function formatLocation(country, city) {
+    if (!country || country === 'Unknown') return '-';
+    if (city && city !== 'Unknown') return `${country} (${city})`;
+    return country;
 }
 
 async function loadConnections() {
@@ -68,7 +82,7 @@ async function loadConnections() {
         
         const tbody = document.getElementById('connections-body');
         if (data.connections.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 2rem;">No connections found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #94a3b8; padding: 2rem;">No connections found</td></tr>';
             return;
         }
         
@@ -77,24 +91,28 @@ async function loadConnections() {
             const src = `${conn.src_ip}:${conn.src_port || '-'}`;
             const dst = `${conn.dst_ip}:${conn.dst_port || '-'}`;
             const bytes = formatBytes((conn.bytes_in || 0) + (conn.bytes_out || 0));
+            const srcLoc = formatLocation(conn.src_country, conn.src_city);
+            const dstLoc = formatLocation(conn.dst_country, null);
             
             return `
                 <tr>
                     <td>${time}</td>
                     <td>${src}</td>
+                    <td>${srcLoc}</td>
                     <td>${dst}</td>
+                    <td>${dstLoc}</td>
                     <td>${conn.domain || '-'}</td>
                     <td>${conn.protocol}</td>
                     <td>${bytes}</td>
                     <td>${formatDuration(conn.duration)}</td>
-                    <td>${getThreatBadge(conn.threat_score, conn.threat_type)}</td>
+                    <td>${getThreatBadge(conn.threat_level, conn.threat_type)}</td>
                 </tr>
             `;
         }).join('');
     } catch (error) {
         console.error('Error loading connections:', error);
         document.getElementById('connections-body').innerHTML = 
-            '<tr><td colspan="8" style="text-align: center; color: #ef4444; padding: 2rem;">Error loading data</td></tr>';
+            '<tr><td colspan="10" style="text-align: center; color: #ef4444; padding: 2rem;">Error loading data</td></tr>';
     }
 }
 

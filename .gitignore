@@ -60,6 +60,7 @@ logs/
 # Database
 *.sql
 *.sqlite
+!docker/init-db.sql
 
 # Model files (large binaries)
 models/

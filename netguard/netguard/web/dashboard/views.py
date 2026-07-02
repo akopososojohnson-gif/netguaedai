@@ -129,7 +129,8 @@ def api_connections(request):
             cursor.execute("""
                 SELECT time, src_ip, src_port, dst_ip, dst_port, domain,
                        protocol, bytes_in, bytes_out, duration,
-                       threat_score, threat_type
+                       threat_score, threat_type, threat_level,
+                       src_country, src_city, dst_country
                 FROM connections 
                 WHERE time > NOW() - INTERVAL '%s minutes'
                 ORDER BY time DESC
@@ -159,7 +160,8 @@ def api_threats(request):
         with connections['default'].cursor() as cursor:
             cursor.execute("""
                 SELECT time, src_ip, dst_ip, dst_port, protocol,
-                       threat_score, threat_type, domain
+                       threat_score, threat_type, threat_level, domain,
+                       src_country, src_city, dst_country
                 FROM connections 
                 WHERE threat_score > 0.7
                 AND time > NOW() - INTERVAL '24 hours'
@@ -190,7 +192,7 @@ def api_alerts_recent(request):
             
             # Get recent alerts
             cursor.execute("""
-                SELECT id, time, alert_type, severity, message, 
+                SELECT id, time, alert_type, severity, threat_level, message, 
                        src_ip, dst_ip, acknowledged
                 FROM alerts 
                 WHERE time > NOW() - INTERVAL '24 hours'
@@ -273,7 +275,8 @@ def api_search(request):
             cursor.execute(f"""
                 SELECT time, src_ip, src_port, dst_ip, dst_port, domain,
                        protocol, bytes_in, bytes_out, duration,
-                       threat_score, threat_type
+                       threat_score, threat_type, threat_level,
+                       src_country, src_city, dst_country
                 FROM connections 
                 WHERE {where_sql}
                 ORDER BY time DESC

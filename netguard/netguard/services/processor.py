@@ -10,6 +10,7 @@ import json
 import logging
 import signal
 import pickle
+import ipaddress
 from datetime import datetime
 from collections import defaultdict
 from configparser import ConfigParser
@@ -34,6 +35,94 @@ logger = logging.getLogger('netguard-processor')
 
 # Model paths - use copied models in /opt/netguard/models
 MODEL_BASE_PATH = os.environ.get('MODEL_BASE_PATH', '/opt/netguard/models')
+
+# GeoIP database path
+GEOIP_DB_PATH = os.environ.get('GEOIP_DB_PATH', '/opt/netguard/GeoLite2-City.mmdb')
+
+
+class GeoIPEnricher:
+    """Enrich IP addresses with GeoIP location data"""
+    
+    def __init__(self, db_path=None):
+        self.reader = None
+        self.cache = {}
+        self.db_path = db_path or GEOIP_DB_PATH
+        self._load_database()
+    
+    def _load_database(self):
+        """Try to load MaxMind GeoLite2 database"""
+        try:
+            import geoip2.database
+            if os.path.exists(self.db_path):
+                self.reader = geoip2.database.Reader(self.db_path)
+                logger.info(f"GeoIP database loaded: {self.db_path}")
+            else:
+                logger.warning(f"GeoIP database not found at {self.db_path}. Will use online fallback.")
+        except ImportError:
+            logger.warning("geoip2 package not installed. Will use online fallback for GeoIP.")
+        except Exception as e:
+            logger.warning(f"Could not load GeoIP database: {e}")
+    
+    def is_private_ip(self, ip):
+        """Check if IP is private/local"""
+        if not ip:
+            return True
+        try:
+            return ipaddress.ip_address(ip).is_private
+        except (ValueError, TypeError):
+            return True
+    
+    def lookup(self, ip):
+        """Lookup GeoIP data for an IP with caching"""
+        if not ip:
+            return {'country': 'Unknown', 'city': 'Unknown'}
+        
+        if ip in self.cache:
+            return self.cache[ip]
+        
+        if self.is_private_ip(ip):
+            result = {'country': 'Local', 'city': 'Local'}
+            self.cache[ip] = result
+            return result
+        
+        # Try offline MaxMind database
+        if self.reader:
+            try:
+                response = self.reader.city(ip)
+                result = {
+                    'country': response.country.iso_code or response.country.name or 'Unknown',
+                    'city': response.city.name or 'Unknown'
+                }
+                self.cache[ip] = result
+                return result
+            except Exception as e:
+                logger.debug(f"GeoIP offline lookup failed for {ip}: {e}")
+        
+        # Fallback to online API (rate-limited, no auth required)
+        try:
+            import requests
+            resp = requests.get(f"https://ipapi.co/{ip}/json/", timeout=2)
+            data = resp.json()
+            if 'error' not in data:
+                result = {
+                    'country': data.get('country_name', data.get('country', 'Unknown')),
+                    'city': data.get('city', 'Unknown')
+                }
+                self.cache[ip] = result
+                return result
+        except Exception as e:
+            logger.debug(f"GeoIP online lookup failed for {ip}: {e}")
+        
+        result = {'country': 'Unknown', 'city': 'Unknown'}
+        self.cache[ip] = result
+        return result
+    
+    def close(self):
+        if self.reader:
+            try:
+                self.reader.close()
+            except Exception:
+                pass
 
 class FlowTracker:
     """Track network flows and extract CICIDS2017-style features"""
@@ -274,6 +363,17 @@ class MLThreatDetector:
         
         return np.array(features, dtype=np.float64).reshape(1, -1)
     
+    def _classify_threat_level(self, score):
+        """Classify threat score into explicit LOW/MEDIUM/HIGH/CRITICAL levels"""
+        if score >= 0.7:
+            return 'CRITICAL'
+        elif score >= 0.5:
+            return 'HIGH'
+        elif score >= 0.3:
+            return 'MEDIUM'
+        else:
+            return 'LOW'
+    
     def predict(self, cicids_features, flow_packets=0):
         """Run prediction using loaded models with weighted ensemble"""
         if not self.models:
@@ -283,7 +383,7 @@ class MLThreatDetector:
         try:
             # Don't flag flows with very few packets (not enough data)
             if flow_packets < 3:
-                return 0.0, 'normal'
+                return 0.0, 'normal', 'LOW', 'LOW'
             
             # Whitelist common benign ports (reduce false positives)
             dst_port = cicids_features.get(' Destination Port', 0)
@@ -351,7 +451,8 @@ class MLThreatDetector:
                 effective_score = max(0, avg_score - threshold_boost)
                 
                 threat_type = self._classify_threat(cicids_features, effective_score)
-                return effective_score, threat_type
+                threat_level = self._classify_threat_level(effective_score)
+                return effective_score, threat_type, threat_level
             else:
                 return self._rule_based_predict(cicids_features)
                 
@@ -374,7 +475,9 @@ class MLThreatDetector:
             threat_score += 0.4
             threat_type = 'high_data_rate'
         
-        return min(threat_score, 1.0), threat_type
+        threat_score = min(threat_score, 1.0)
+        threat_level = self._classify_threat_level(threat_score)
+        return threat_score, threat_type, threat_level
     
     def _classify_threat(self, features, score):
         """Classify threat type based on features and score"""
@@ -434,6 +537,7 @@ class AIProcessor:
         
         self.flow_tracker = FlowTracker()
         self.ml_detector = MLThreatDetector()
+        self.geoip = GeoIPEnricher()
         
         self.batch = []
         self.batch_size = 50
@@ -458,8 +562,9 @@ class AIProcessor:
         query = """
             INSERT INTO connections 
             (time, src_ip, src_port, dst_ip, dst_port, domain, protocol, 
-             bytes_in, bytes_out, duration, threat_score, threat_type)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             bytes_in, bytes_out, duration, threat_score, threat_type, threat_level,
+             src_country, src_city, dst_country)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """
         
@@ -494,6 +599,10 @@ class AIProcessor:
                 duration,
                 threat_score,
                 conn.get('threat_type', 'normal'),
+                conn.get('threat_level', 'LOW'),
+                conn.get('src_country', 'Unknown'),
+                conn.get('src_city', 'Unknown'),
+                conn.get('dst_country', 'Unknown'),
             ))
             
             connection_id = cursor.fetchone()[0]
@@ -512,8 +621,9 @@ class AIProcessor:
         """Generate alert for high/critical threats"""
         threat_score = conn.get('threat_score', 0)
         threat_type = conn.get('threat_type', 'attack')
+        threat_level = conn.get('threat_level', 'MEDIUM')
         
-        # Determine severity
+        # Determine severity (legacy field, kept for compatibility)
         if threat_score >= 0.9:
             severity = 'critical'
         elif threat_score >= 0.7:
@@ -531,12 +641,13 @@ class AIProcessor:
         
         # Insert alert
         cursor.execute("""
-            INSERT INTO alerts (time, alert_type, severity, message, src_ip, dst_ip, acknowledged)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO alerts (time, alert_type, severity, threat_level, message, src_ip, dst_ip, acknowledged)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             datetime.fromisoformat(conn['timestamp']),
             alert_type,
             severity,
+            threat_level,
             message,
             src_ip,
             dst_ip,
@@ -547,6 +658,7 @@ class AIProcessor:
         alert_data = {
             'type': 'alert',
             'severity': severity,
+            'threat_level': threat_level,
             'title': f'{alert_type} Detected',
             'message': message,
             'src_ip': src_ip,
@@ -600,11 +712,19 @@ class AIProcessor:
         cicids_features = self.flow_tracker.get_cicids_features(flow_key)
         
         # ML prediction (with flow packet count for thresholding)
-        threat_score, threat_type = self.ml_detector.predict(cicids_features, total_packets)
+        threat_score, threat_type, threat_level = self.ml_detector.predict(cicids_features, total_packets)
+        
+        # GeoIP enrichment
+        src_geo = self.geoip.lookup(packet.get('src_ip'))
+        dst_geo = self.geoip.lookup(packet.get('dst_ip'))
         
         # Enrich packet
         packet['threat_score'] = threat_score
         packet['threat_type'] = threat_type
+        packet['threat_level'] = threat_level
+        packet['src_country'] = src_geo.get('country', 'Unknown')
+        packet['src_city'] = src_geo.get('city', 'Unknown')
+        packet['dst_country'] = dst_geo.get('country', 'Unknown')
         packet['flow_duration'] = cicids_features[' Flow Duration']
         packet['cicids_features'] = cicids_features
         
@@ -662,6 +782,9 @@ class AIProcessor:
         
         if self.db_conn:
             self.db_conn.close()
+        
+        if self.geoip:
+            self.geoip.close()
         
         logger.info("Processor stopped")
 

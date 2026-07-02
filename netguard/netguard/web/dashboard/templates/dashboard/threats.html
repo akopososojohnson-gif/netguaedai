@@ -32,15 +32,17 @@
             <tr>
                 <th>Time</th>
                 <th>Source IP</th>
+                <th>Source Location</th>
                 <th>Target</th>
                 <th>Attack Type</th>
+                <th>Threat Level</th>
                 <th>Threat Score</th>
                 <th>Status</th>
             </tr>
         </thead>
         <tbody id="threats-body">
             <tr>
-                <td colspan="6" style="text-align: center; color: #94a3b8; padding: 2rem;">Loading...</td>
+                <td colspan="8" style="text-align: center; color: #94a3b8; padding: 2rem;">Loading...</td>
             </tr>
         </tbody>
     </table>
@@ -77,7 +79,7 @@ async function loadThreats() {
         // Update table
         const tbody = document.getElementById('threats-body');
         if (data.threats.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 2rem;">No threats detected in last 24 hours</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 2rem;">No threats detected in last 24 hours</td></tr>';
             return;
         }
         
@@ -86,13 +88,23 @@ async function loadThreats() {
             const target = `${threat.dst_ip}:${threat.dst_port || '-'}`;
             const score = (threat.threat_score * 100).toFixed(0) + '%';
             const scoreColor = threat.threat_score >= 0.9 ? '#ef4444' : '#f97316';
+            const levelColor = {
+                'CRITICAL': '#ef4444',
+                'HIGH': '#f97316',
+                'MEDIUM': '#f59e0b',
+                'LOW': '#22c55e'
+            }[threat.threat_level] || '#94a3b8';
+            const location = threat.src_country || 'Unknown';
+            const city = threat.src_city && threat.src_city !== 'Unknown' ? ` (${threat.src_city})` : '';
             
             return `
                 <tr>
                     <td>${time}</td>
                     <td>${threat.src_ip}</td>
+                    <td>${location}${city}</td>
                     <td>${target}</td>
                     <td>${threat.threat_type ? threat.threat_type.toUpperCase() : 'UNKNOWN'}</td>
+                    <td><span class="badge" style="background: ${levelColor}; text-transform: uppercase;">${threat.threat_level || 'UNKNOWN'}</span></td>
                     <td style="color: ${scoreColor}; font-weight: bold;">${score}</td>
                     <td><span class="badge badge-danger">DETECTED</span></td>
                 </tr>
@@ -101,7 +113,7 @@ async function loadThreats() {
     } catch (error) {
         console.error('Error loading threats:', error);
         document.getElementById('threats-body').innerHTML = 
-            '<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 2rem;">Error loading data</td></tr>';
+            '<tr><td colspan="8" style="text-align: center; color: #ef4444; padding: 2rem;">Error loading data</td></tr>';
     }
 }
 

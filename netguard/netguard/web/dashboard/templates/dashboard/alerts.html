@@ -32,6 +32,7 @@
             <tr>
                 <th>Time</th>
                 <th>Severity</th>
+                <th>Threat Level</th>
                 <th>Type</th>
                 <th>Message</th>
                 <th>Source</th>
@@ -41,7 +42,7 @@
         </thead>
         <tbody id="alerts-body">
             <tr>
-                <td colspan="7" style="text-align: center; color: #94a3b8; padding: 2rem;">Loading...</td>
+                <td colspan="8" style="text-align: center; color: #94a3b8; padding: 2rem;">Loading...</td>
             </tr>
         </tbody>
     </table>
@@ -83,7 +84,7 @@ async function loadAlerts() {
         
         const tbody = document.getElementById('alerts-body');
         if (alerts.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 2rem;">No alerts found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 2rem;">No alerts found</td></tr>';
             return;
         }
         
@@ -95,11 +96,18 @@ async function loadAlerts() {
             const action = alert.acknowledged 
                 ? '-' 
                 : `<button class="btn btn-primary" style="padding: 0.25rem 0.5rem; font-size: 0.875rem;" onclick="acknowledgeAlert(${alert.id})">Acknowledge</button>`;
+            const levelColor = {
+                'CRITICAL': '#ef4444',
+                'HIGH': '#f97316',
+                'MEDIUM': '#f59e0b',
+                'LOW': '#22c55e'
+            }[alert.threat_level] || '#94a3b8';
             
             return `
                 <tr>
                     <td>${time}</td>
                     <td>${getSeverityBadge(alert.severity)}</td>
+                    <td><span class="badge" style="background: ${levelColor}; text-transform: uppercase;">${alert.threat_level || 'UNKNOWN'}</span></td>
                     <td>${alert.alert_type}</td>
                     <td>${alert.message}</td>
                     <td>${alert.src_ip || '-'}</td>
@@ -111,7 +119,7 @@ async function loadAlerts() {
     } catch (error) {
         console.error('Error loading alerts:', error);
         document.getElementById('alerts-body').innerHTML = 
-            '<tr><td colspan="7" style="text-align: center; color: #ef4444; padding: 2rem;">Error loading data</td></tr>';
+            '<tr><td colspan="8" style="text-align: center; color: #ef4444; padding: 2rem;">Error loading data</td></tr>';
     }
 }
 
