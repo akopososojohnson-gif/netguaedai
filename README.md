@@ -262,7 +262,24 @@ The processor enriches each connection with GeoIP data:
 - **Source country/city** (`src_country`, `src_city`)
 - **Destination country** (`dst_country`)
 
-Offline lookups use MaxMind GeoLite2-City (place `GeoLite2-City.mmdb` at `/opt/netguard/GeoLite2-City.mmdb` or set `GEOIP_DB_PATH`). If the database is missing, the system falls back to a free online API for public IPs; private IPs are marked **Local**.
+The installer automatically attempts to download a free GeoIP City database (DB-IP City Lite) to `/opt/netguard/GeoLite2-City.mmdb`. You can also run the helper manually:
+
+```bash
+sudo ./scripts/download-geoip.sh /opt/netguard
+```
+
+For MaxMind GeoLite2 (more accurate), set your license key first:
+
+```bash
+export GEOIP_LICENSE_KEY=your_maxmind_license_key
+sudo ./scripts/download-geoip.sh /opt/netguard
+```
+
+If the database is missing, the system falls back to a free online API for public IPs; private IPs are marked **Local**. You can also set a custom path:
+
+```bash
+export GEOIP_DB_PATH=/path/to/GeoLite2-City.mmdb
+```
 
 ---
 

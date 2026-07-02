@@ -216,9 +216,32 @@ install_python() {
     source $INSTALL_DIR/venv/bin/activate
     
     pip install -q --upgrade pip
-    pip install -q scapy redis psycopg2-binary django requests python-dateutil numpy scikit-learn xgboost gunicorn daphne geoip2
+    pip install -q scapy redis psycopg2-binary django requests python-dateutil numpy scikit-learn xgboost gunicorn daphne geoip2 paramiko
     
     print_success "Python packages installed"
+}
+
+setup_geoip() {
+    print_step "Setting up GeoIP database..."
+    
+    source $INSTALL_DIR/venv/bin/activate
+    
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    if [[ -f "$script_dir/scripts/download-geoip.sh" ]]; then
+        bash "$script_dir/scripts/download-geoip.sh" "$INSTALL_DIR"
+    else
+        print_warning "GeoIP download script not found. Skipping automatic GeoIP setup."
+    fi
+    
+    # Ensure netguard user can read the database if it exists
+    if [[ -f "$INSTALL_DIR/GeoLite2-City.mmdb" ]]; then
+        chown $SERVICE_USER:$SERVICE_USER "$INSTALL_DIR/GeoLite2-City.mmdb"
+        chmod 644 "$INSTALL_DIR/GeoLite2-City.mmdb"
+    fi
+    
+    print_success "GeoIP setup complete"
 }
 
 create_config() {
@@ -378,6 +401,7 @@ main() {
     setup_dirs
     setup_database
     install_python
+    setup_geoip
     create_config
     create_services
     setup_django
